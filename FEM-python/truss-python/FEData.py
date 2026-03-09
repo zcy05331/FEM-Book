@@ -56,6 +56,9 @@ K     = np.array([[]])
 f     = np.array([[]])
 d     = np.array([[]])
 
+edof  = np.array([], dtype=int)   # essential DOF indices (0-indexed)
+e_bc  = np.array([])              # prescribed displacement values
+
 plot_truss = False
 plot_node  = False
 plot_tex   = False

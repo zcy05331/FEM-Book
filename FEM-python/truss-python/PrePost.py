@@ -60,6 +60,20 @@ def create_model_json(DataFile):
     for ind, value in enumerate(fdof):
         model.f[value-1][0] = force[ind]
 
+    # essential boundary conditions
+    if 'edof' in FEData:
+        # new format: explicit DOF indices (1-indexed in JSON)
+        model.edof = np.array(FEData['edof'], dtype=int) - 1  # convert to 0-indexed
+        model.e_bc = np.array(FEData['e_bc'])
+    else:
+        # old format: first nd DOFs are essential BCs
+        model.edof = np.arange(model.nd, dtype=int)
+        model.e_bc = np.array(FEData['d'][:model.nd])
+
+    # set prescribed displacements in d
+    for i, dof in enumerate(model.edof):
+        model.d[dof][0] = model.e_bc[i]
+
     # output plots
     model.plot_truss= FEData['plot_truss']
     model.plot_node = FEData['plot_node']
@@ -115,7 +129,7 @@ def plottruss():
         plt.title("Truss Plot")
         plt.xlabel(r"$x$")
         plt.ylabel(r"$y$")
-        plt.savefig("truss.pdf")
+
 
         # Convert matplotlib figures into PGFPlots figures stored in a Tikz file, 
         # which can be added into your LaTex source code by "\input{fe_plot.tex}"
@@ -161,4 +175,70 @@ def print_stress():
                              problem is invalid".format(model.ndof))
 
         print("{0}\t\t\t{1}".format(e+1, model.stress[e]))
-        
+
+
+def plot_deformed_truss(scale=None):
+    '''
+    Plot the original and deformed truss structure.
+
+    Args:
+        scale: displacement magnification factor. If None, auto-computed.
+    '''
+    if model.ndof != 2:
+        return
+
+    # auto-scale: make max visible deformation ~10% of structure span
+    if scale is None:
+        span = max(model.x.max() - model.x.min(), model.y.max() - model.y.min())
+        max_disp = max(np.max(np.abs(model.d)), 1e-30)
+        scale = 0.1 * span / max_disp
+
+    # compute deformed coordinates
+    x_def = model.x.copy()
+    y_def = model.y.copy()
+    for i in range(model.nnp):
+        x_def[i] += scale * model.d[2*i]
+        y_def[i] += scale * model.d[2*i + 1]
+
+    fig, ax = plt.subplots(1, 1, figsize=(14, 5))
+
+    # 设置中文字体 (macOS: PingFang SC, Linux: SimHei, fallback: sans-serif)
+    import platform
+    if platform.system() == 'Darwin':
+        plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Arial Unicode MS', 'Heiti TC']
+    else:
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Micro Hei']
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # plot original truss
+    for e in range(model.nel):
+        n1, n2 = model.IEN[e, 0] - 1, model.IEN[e, 1] - 1
+        ax.plot([model.x[n1], model.x[n2]], [model.y[n1], model.y[n2]],
+                'b-', linewidth=1.0, alpha=0.5)
+
+    # plot deformed truss
+    for e in range(model.nel):
+        n1, n2 = model.IEN[e, 0] - 1, model.IEN[e, 1] - 1
+        ax.plot([x_def[n1], x_def[n2]], [y_def[n1], y_def[n2]],
+                'r-', linewidth=1.5)
+
+    # plot nodes
+    ax.plot(model.x, model.y, 'bo', markersize=5, label='原始结构')
+    ax.plot(x_def, y_def, 'rs', markersize=5,
+            label='变形结构 (放大系数={:.0f})'.format(scale))
+
+    # node numbers
+    for i in range(model.nnp):
+        ax.annotate(str(i+1), (model.x[i], model.y[i]),
+                    textcoords="offset points", xytext=(5, 5), fontsize=8, color='blue')
+
+    ax.set_xlabel('x (m)')
+    ax.set_ylabel('y (m)')
+    ax.set_title('桁架变形图 (位移放大系数 = {:.0f})'.format(scale))
+    ax.legend(loc='upper right')
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('deformed_truss.png', dpi=150)
+    plt.show()
